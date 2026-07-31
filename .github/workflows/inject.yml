@@ -52,22 +52,54 @@ jobs:
           rm -rf work output
           mkdir -p work output
 
-          ditto -x -k "$IPA" work/
-          ls -la work/Payload/
+          python3 -c "
+          import zipfile, os
+          out = os.path.abspath('work')
+          os.makedirs(out, exist_ok=True)
+          zf = zipfile.ZipFile('$IPA', 'r')
+          for info in zf.infolist():
+              target = os.path.join(out, info.filename.replace('\\\\', '/'))
+              if target.startswith('/') or '..' in target:
+                  print('SKIP suspicious:', target)
+                  continue
+              os.makedirs(os.path.dirname(target), exist_ok=True)
+              if not target.endswith('/'):
+                  with zf.open(info) as src, open(target, 'wb') as dst:
+                      dst.write(src.read())
+          zf.close()
+          print('Extracted OK')
+          "
+          ls -la work/
 
-          BINARY=$(find work/Payload -name '*.app' -maxdepth 1 | head -1)
+          APP_DIR=$(find work -name 'Payload' -maxdepth 1 -type d | head -1)
+          if [ -z "$APP_DIR" ]; then
+            APP_DIR=$(find work -name '*.app' -path '*/Payload/*' -maxdepth 3 -type d | head -1)
+            APP_DIR=$(dirname "$APP_DIR")
+          fi
+          echo "App dir: $APP_DIR"
+
+          BINARY=$(find "$APP_DIR" -name '*.app' -maxdepth 1 -type d | head -1)
           APP_NAME=$(basename "$BINARY" .app)
           BIN_PATH="$BINARY/$APP_NAME"
           echo "Binary: $BIN_PATH"
 
-          install_name_tool -id "@executable_path/$APP_NAME" "$BIN_PATH" 2>/dev/null || true
           insert_dylib "$DYLIB" "$BIN_PATH" --all-yes --inplace
           ldid -S "$BIN_PATH"
 
           rm -rf "$BINARY/_CodeSignature"
 
           cd work
-          ditto -c -k --sequesterRsrc --keepParent Payload "../output/${NAME}-injected.ipa"
+          python3 -c "
+          import zipfile, os
+          zf = zipfile.ZipFile('../output/${NAME}-injected.ipa', 'w', zipfile.ZIP_DEFLATED)
+          for root, dirs, files in os.walk('.'):
+              for f in dirs + files:
+                  full = os.path.join(root, f)
+                  if full.startswith('./'): full = full[2:]
+                  zf.write(full, full.replace(os.sep, '/'))
+          zf.close()
+          print('Repacked OK')
+          "
           cd ..
           ls -lh "output/${NAME}-injected.ipa"
 
