@@ -87,8 +87,11 @@ jobs:
           echo "Binary: $BIN_PATH"
           file "$BIN_PATH"
 
-          insert_dylib "$DYLIB" "$BIN_PATH" --all-yes --inplace
+          mkdir -p "$BINARY/Frameworks"
+          cp "$DYLIB" "$BINARY/Frameworks/"
+          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN_PATH" --inplace
           ldid -S "$BIN_PATH"
+          ldid -S "$BINARY/Frameworks/ActiveDylib.dylib"
 
           rm -rf "$BINARY/_CodeSignature"
 
