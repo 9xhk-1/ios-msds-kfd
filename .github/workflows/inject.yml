@@ -31,97 +31,18 @@ jobs:
           echo "ipa=$IPA" >> $GITHUB_OUTPUT
           echo "Found IPA: $IPA"
 
-      - name: Install ldid
-        run: brew install ldid
-
-      - name: Build injector
+      - name: Install tools
         run: |
-          cat > /tmp/inject.c << 'CEOF'
-          #include <stdio.h>
-          #include <stdlib.h>
-          #include <string.h>
-          #include <mach-o/loader.h>
-          #include <mach-o/fat.h>
-          #include <fcntl.h>
-          #include <unistd.h>
-          #include <sys/mman.h>
-          #include <sys/stat.h>
+          brew install ldid
 
-          int main(int argc, char **argv) {
-              if (argc != 3) { fprintf(stderr, "Usage: inject <dylib_path> <binary>\n"); return 1; }
-              const char *dylib = argv[1];
-              char *binpath = argv[2];
-              size_t dylib_len = strlen(dylib) + 1;
+      - name: Build insert_dylib
+        run: |
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
+          cd /tmp/id
+          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release -sdk macosx CONFIGURATION_BUILD_DIR=/tmp/id_build -quiet
+          sudo cp /tmp/id_build/insert_dylib /usr/local/bin/
 
-              int fd = open(binpath, O_RDWR);
-              if (fd < 0) { perror("open"); return 1; }
-              struct stat st; fstat(fd, &st);
-              uint8_t *data = mmap(NULL, st.st_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-              if (data == MAP_FAILED) { perror("mmap"); return 1; }
-
-              uint32_t magic = *(uint32_t*)data, offset = 0;
-              if (magic == FAT_MAGIC || magic == FAT_CIGAM) {
-                  struct fat_header *fh = (void*)data;
-                  uint32_t nfat = OSSwapBigToHostInt32(fh->nfat_arch);
-                  struct fat_arch *fa = (void*)(data + sizeof(struct fat_header));
-                  int found = 0;
-                  for (uint32_t i = 0; i < nfat; i++) {
-                      if (OSSwapBigToHostInt32(fa[i].cputype) == CPU_TYPE_ARM64) {
-                          offset = OSSwapBigToHostInt32(fa[i].offset); found = 1; break;
-                      }
-                  }
-                  if (!found) { fprintf(stderr, "no arm64 slice\n"); return 1; }
-              }
-
-              struct mach_header_64 *mh = (void*)(data + offset);
-              if (mh->magic != MH_MAGIC_64) { fprintf(stderr, "not arm64\n"); return 1; }
-
-    uint32_t ncmds = mh->ncmds;
-    uint32_t sizeofcmds = mh->sizeofcmds;
-    uint8_t *readpos = (void*)(data + offset + sizeof(struct mach_header_64));
-    uint8_t *writepos = readpos;
-
-    // remove LC_CODE_SIGNATURE
-    uint32_t new_ncmds = ncmds;
-    for (uint32_t i = 0; i < ncmds; i++) {
-        struct load_command *lc = (void*)readpos;
-        if (lc->cmd == LC_CODE_SIGNATURE) {
-            new_ncmds--;
-        } else {
-            if (writepos != readpos) memmove(writepos, lc, lc->cmdsize);
-            writepos += lc->cmdsize;
-        }
-        readpos += lc->cmdsize;
-    }
-
-    // calc new sizes
-    uint32_t new_sz = (uint32_t)(writepos - (data + offset + sizeof(struct mach_header_64)));
-
-              // add LC_LOAD_DYLIB
-              uint32_t dylib_cmd_sz = sizeof(struct dylib_command) + dylib_len;
-              dylib_cmd_sz = (dylib_cmd_sz + 7) & ~7;
-    struct dylib_command *dc = (void*)writepos;
-    dc->cmd = LC_LOAD_DYLIB;
-    dc->cmdsize = dylib_cmd_sz;
-    dc->dylib.name.offset = sizeof(struct dylib_command);
-    dc->dylib.timestamp = 2;
-    dc->dylib.current_version = 0;
-    dc->dylib.compatibility_version = 0;
-    memcpy(writepos + sizeof(struct dylib_command), dylib, dylib_len);
-    new_ncmds++;
-    new_sz += dylib_cmd_sz;
-
-              mh->ncmds = new_ncmds;
-              mh->sizeofcmds = new_sz;
-
-              munmap(data, st.st_size);
-              close(fd);
-              return 0;
-          }
-          CEOF
-          clang -O2 /tmp/inject.c -o /usr/local/bin/inject
-
-      - name: Inject dylib into IPA
+      - name: Inject into IPA
         run: |
           set -e
           IPA="${{ steps.find-ipa.outputs.ipa }}"
@@ -161,7 +82,7 @@ jobs:
 
           mkdir -p "$APP/Frameworks"
           cp "$DYLIB" "$APP/Frameworks/"
-          inject "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN"
+          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN" --inplace
           ldid -S "$BIN"
           ldid -S "$APP/Frameworks/ActiveDylib.dylib"
           rm -rf "$APP/_CodeSignature"
