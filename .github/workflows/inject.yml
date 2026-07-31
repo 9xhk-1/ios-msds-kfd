@@ -31,27 +31,15 @@ jobs:
           echo "ipa=$IPA" >> $GITHUB_OUTPUT
           echo "Found IPA: $IPA"
 
-      - name: Cache insert_dylib
-        id: cache-id
-        uses: actions/cache@v4
-        with:
-          path: /usr/local/bin/insert_dylib
-          key: insert-dylib-v2
-
-      - name: Build insert_dylib
-        if: steps.cache-id.outputs.cache-hit != 'true'
+      - name: Install tools
         run: |
           brew install ldid
-          git clone https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib --depth 1
-          cd /tmp/insert_dylib
-          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release -sdk macosx CONFIGURATION_BUILD_DIR=/tmp/id_build -quiet
-          sudo cp /tmp/id_build/insert_dylib /usr/local/bin/
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
+          cd /tmp/id
+          clang -O2 -o insert_dylib *.c 2>/dev/null || clang -O2 -o insert_dylib *.c -framework Foundation
+          sudo cp insert_dylib /usr/local/bin/
 
-      - name: Install ldid
-        if: steps.cache-id.outputs.cache-hit != 'true'
-        run: brew install ldid
-
-      - name: Inject dylib into IPA
+      - name: Inject into IPA
         run: |
           set -e
           IPA="${{ steps.find-ipa.outputs.ipa }}"
@@ -63,8 +51,9 @@ jobs:
           rm -rf work output
           mkdir -p work output
 
+          # extract IPA via Python (handles Windows-created zip paths)
           python3 -c "
-          import zipfile, os, re
+          import zipfile, os
           out = os.path.abspath('work')
           os.makedirs(out, exist_ok=True)
           zf = zipfile.ZipFile('$IPA', 'r')
@@ -75,12 +64,8 @@ jobs:
                   idx = parts.index('Payload')
                   rel = '/'.join(parts[idx:])
               except ValueError:
-                  if fname.lower().startswith('payload/'):
-                      rel = fname
-                  else:
-                      continue
-              if '..' in rel:
                   continue
+              if '..' in rel: continue
               target = os.path.normpath(os.path.join(out, rel))
               os.makedirs(os.path.dirname(target), exist_ok=True)
               if not info.is_dir():
@@ -89,24 +74,23 @@ jobs:
           zf.close()
           print('Extracted OK')
           "
-          ls -la work/Payload/
 
-          APP_DIR="work/Payload"
-          BINARY=$(find "$APP_DIR" -name '*.app' -maxdepth 1 -type d | head -1)
-          APP_NAME=$(basename "$BINARY" .app)
-          BIN_PATH="$BINARY/$APP_NAME"
+          # find binary
+          APP=$(find work/Payload -name '*.app' -maxdepth 1 -type d | head -1)
+          APP_NAME=$(basename "$APP" .app)
+          BIN="$APP/$APP_NAME"
           echo "App: $APP_NAME"
-          echo "Binary: $BIN_PATH"
-          file "$BIN_PATH"
+          echo "Bin: $BIN"
 
-          mkdir -p "$BINARY/Frameworks"
-          cp "$DYLIB" "$BINARY/Frameworks/"
-          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN_PATH" --inplace
-          ldid -S "$BIN_PATH"
-          ldid -S "$BINARY/Frameworks/ActiveDylib.dylib"
+          # copy dylib into Frameworks, inject with @executable_path
+          mkdir -p "$APP/Frameworks"
+          cp "$DYLIB" "$APP/Frameworks/"
+          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN" --inplace
+          ldid -S "$BIN"
+          ldid -S "$APP/Frameworks/ActiveDylib.dylib"
+          rm -rf "$APP/_CodeSignature"
 
-          rm -rf "$BINARY/_CodeSignature"
-
+          # repack
           cd work
           python3 -c "
           import zipfile, os
@@ -114,9 +98,9 @@ jobs:
           for root, dirs, files in os.walk('.'):
               for name in dirs + files:
                   full = os.path.join(root, name)
-                  arcname = full.replace(os.sep, '/')
-                  if arcname.startswith('./'): arcname = arcname[2:]
-                  zf.write(full, arcname)
+                  arc = full.replace(os.sep, '/')
+                  if arc.startswith('./'): arc = arc[2:]
+                  zf.write(full, arc)
           zf.close()
           print('Repacked OK')
           "
