@@ -1,0 +1,55 @@
+name: Inject & Build IPA
+
+on:
+  push:
+    paths:
+      - '**.ipa'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [dylib-updated]
+
+jobs:
+  inject:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download latest dylib
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          github_token: ${{ secrets.GH_PAT }}
+          repo: 9xhk-1/ios-active-dylib
+          branch: main
+          workflow: build.yml
+          name: ActiveDylib
+          path: dylib/
+
+      - name: Find IPA
+        id: find-ipa
+        run: |
+          IPA=$(find . -name '*.ipa' -not -path './output/*' | head -1)
+          echo "ipa=$IPA" >> $GITHUB_OUTPUT
+          echo "Found IPA: $IPA"
+
+      - name: Install insert_dylib
+        run: |
+          brew install ldid
+          git clone https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib
+          cd /tmp/insert_dylib
+          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release -sdk macosx CONFIGURATION_BUILD_DIR=/tmp/id_build
+          sudo cp /tmp/id_build/insert_dylib /usr/local/bin/
+
+      - name: Inject dylib into IPA
+        run: |
+          mkdir -p output
+          IPA="${{ steps.find-ipa.outputs.ipa }}"
+          DYLIB=$(find dylib/ -name '*.dylib' | head -1)
+          NAME=$(basename "$IPA" .ipa)
+          cp "$IPA" "output/${NAME}-injected.ipa"
+          insert_dylib "$DYLIB" "output/${NAME}-injected.ipa" --all-yes
+
+      - name: Upload injected IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: injected-ipa
+          path: output/*-injected.ipa

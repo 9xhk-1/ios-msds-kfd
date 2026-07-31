@@ -1,0 +1,3 @@
+*.ipa
+!*.ipa
+output/
