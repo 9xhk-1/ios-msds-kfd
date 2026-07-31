@@ -95,7 +95,7 @@ jobs:
 
               // calc new sizes
               uint32_t new_ncmds = mh->ncmds;
-              uint32_t new_sz = (uint32_t)(newpos - (void*)(data + offset + sizeof(struct mach_header_64)));
+              uint32_t new_sz = (uint32_t)(newpos - (data + offset + sizeof(struct mach_header_64)));
 
               // add LC_LOAD_DYLIB
               uint32_t dylib_cmd_sz = sizeof(struct dylib_command) + dylib_len;
