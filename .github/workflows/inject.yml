@@ -41,12 +41,33 @@ jobs:
 
       - name: Inject dylib into IPA
         run: |
-          mkdir -p output
           IPA="${{ steps.find-ipa.outputs.ipa }}"
-          DYLIB=$(find dylib/ -name '*.dylib' | head -1)
+          DYLIB=$(find dylib/ -name '*.dylib' -type f | head -1)
           NAME=$(basename "$IPA" .ipa)
-          cp "$IPA" "output/${NAME}-injected.ipa"
-          insert_dylib "$DYLIB" "output/${NAME}-injected.ipa" --all-yes
+          echo "IPA: $IPA"
+          echo "DYLIB: $DYLIB"
+          echo "NAME: $NAME"
+
+          rm -rf work output
+          mkdir -p work output
+
+          unzip -q "$IPA" -d work/
+          ls -la work/Payload/
+
+          BINARY=$(find work/Payload -name '*.app' -maxdepth 1 | head -1)
+          APP_NAME=$(basename "$BINARY" .app)
+          BIN_PATH="$BINARY/$APP_NAME"
+          echo "Binary: $BIN_PATH"
+
+          insert_dylib "$DYLIB" "$BIN_PATH" --all-yes --inplace
+          ldid -S "$BIN_PATH"
+
+          rm -rf "$BINARY/_CodeSignature"
+
+          cd work
+          zip -qr "../output/${NAME}-injected.ipa" Payload/
+          cd ..
+          ls -lh "output/${NAME}-injected.ipa"
 
       - name: Upload injected IPA
         uses: actions/upload-artifact@v4
