@@ -31,9 +31,25 @@ jobs:
           echo "ipa=$IPA" >> $GITHUB_OUTPUT
           echo "Found IPA: $IPA"
 
-      - name: Install tools
+      - name: Cache insert_dylib
+        id: cache-id
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/insert_dylib
+          key: insert-dylib-v2
+
+      - name: Build insert_dylib
+        if: steps.cache-id.outputs.cache-hit != 'true'
         run: |
-          brew install ldid optool
+          brew install ldid
+          git clone https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib --depth 1
+          cd /tmp/insert_dylib
+          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release -sdk macosx CONFIGURATION_BUILD_DIR=/tmp/id_build -quiet
+          sudo cp /tmp/id_build/insert_dylib /usr/local/bin/
+
+      - name: Install ldid
+        if: steps.cache-id.outputs.cache-hit != 'true'
+        run: brew install ldid
 
       - name: Inject dylib into IPA
         run: |
@@ -85,7 +101,7 @@ jobs:
 
           mkdir -p "$BINARY/Frameworks"
           cp "$DYLIB" "$BINARY/Frameworks/"
-          optool install -c load -p "@executable_path/Frameworks/ActiveDylib.dylib" -t "$BIN_PATH"
+          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN_PATH" --inplace
           ldid -S "$BIN_PATH"
           ldid -S "$BINARY/Frameworks/ActiveDylib.dylib"
 
