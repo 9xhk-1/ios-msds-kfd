@@ -34,15 +34,11 @@ jobs:
       - name: Install tools
         run: |
           brew install ldid
-
-      - name: Build insert_dylib
-        run: |
-          GH="Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}"
-          ACC="Accept: application/vnd.github.raw"
-          curl -fsSL -H "$GH" -H "$ACC" "https://api.github.com/repos/Tyilo/insert_dylib/contents/insert_dylib/main.c" -o /tmp/main.c
-          curl -fsSL -H "$GH" -H "$ACC" "https://api.github.com/repos/Tyilo/insert_dylib/contents/shared/shared.h" -o /tmp/shared.h
-          curl -fsSL -H "$GH" -H "$ACC" "https://api.github.com/repos/Tyilo/insert_dylib/contents/insert_dylib/shared.h" -o /tmp/dylib_shared.h 2>/dev/null || true
-          clang -O2 /tmp/main.c -o /usr/local/bin/insert_dylib -I/tmp
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
+          cd /tmp/id
+          xcodebuild -project insert_dylib.xcodeproj -target insert_dylib -configuration Release -sdk macosx CONFIGURATION_BUILD_DIR=/tmp/id_build -quiet
+          sudo cp /tmp/id_build/insert_dylib /usr/local/bin/
+          echo "insert_dylib ready"
 
       - name: Inject into IPA
         run: |
