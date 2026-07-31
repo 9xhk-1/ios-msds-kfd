@@ -41,6 +41,7 @@ jobs:
 
       - name: Inject dylib into IPA
         run: |
+          set -e
           IPA="${{ steps.find-ipa.outputs.ipa }}"
           DYLIB=$(find dylib/ -name '*.dylib' -type f | head -1)
           NAME=$(basename "$IPA" .ipa)
@@ -51,7 +52,7 @@ jobs:
           rm -rf work output
           mkdir -p work output
 
-          unzip -q "$IPA" -d work/
+          ditto -x -k "$IPA" work/
           ls -la work/Payload/
 
           BINARY=$(find work/Payload -name '*.app' -maxdepth 1 | head -1)
@@ -59,13 +60,14 @@ jobs:
           BIN_PATH="$BINARY/$APP_NAME"
           echo "Binary: $BIN_PATH"
 
+          install_name_tool -id "@executable_path/$APP_NAME" "$BIN_PATH" 2>/dev/null || true
           insert_dylib "$DYLIB" "$BIN_PATH" --all-yes --inplace
           ldid -S "$BIN_PATH"
 
           rm -rf "$BINARY/_CodeSignature"
 
           cd work
-          zip -qr "../output/${NAME}-injected.ipa" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload "../output/${NAME}-injected.ipa"
           cd ..
           ls -lh "output/${NAME}-injected.ipa"
 
