@@ -76,40 +76,40 @@ jobs:
               struct mach_header_64 *mh = (void*)(data + offset);
               if (mh->magic != MH_MAGIC_64) { fprintf(stderr, "not arm64\n"); return 1; }
 
-              uint32_t ncmds = mh->ncmds;
-              uint32_t sizeofcmds = mh->sizeofcmds;
-              uint8_t *cmdstart = (void*)(data + offset + sizeof(struct mach_header_64));
-              uint8_t *newpos = cmdstart;
+    uint32_t ncmds = mh->ncmds;
+    uint32_t sizeofcmds = mh->sizeofcmds;
+    uint8_t *readpos = (void*)(data + offset + sizeof(struct mach_header_64));
+    uint8_t *writepos = readpos;
 
-              // remove LC_CODE_SIGNATURE
-              for (uint32_t i = 0; i < ncmds; i++) {
-                  struct load_command *lc = (void*)newpos;
-                  if (lc->cmd == LC_CODE_SIGNATURE) {
-                      // skip this command
-                  } else {
-                      if (newpos != cmdstart) memmove(newpos, (void*)lc, lc->cmdsize);
-                      newpos += lc->cmdsize;
-                  }
-                  cmdstart += lc->cmdsize;
-              }
+    // remove LC_CODE_SIGNATURE
+    uint32_t new_ncmds = ncmds;
+    for (uint32_t i = 0; i < ncmds; i++) {
+        struct load_command *lc = (void*)readpos;
+        if (lc->cmd == LC_CODE_SIGNATURE) {
+            new_ncmds--;
+        } else {
+            if (writepos != readpos) memmove(writepos, lc, lc->cmdsize);
+            writepos += lc->cmdsize;
+        }
+        readpos += lc->cmdsize;
+    }
 
-              // calc new sizes
-              uint32_t new_ncmds = mh->ncmds;
-              uint32_t new_sz = (uint32_t)(newpos - (data + offset + sizeof(struct mach_header_64)));
+    // calc new sizes
+    uint32_t new_sz = (uint32_t)(writepos - (data + offset + sizeof(struct mach_header_64)));
 
               // add LC_LOAD_DYLIB
               uint32_t dylib_cmd_sz = sizeof(struct dylib_command) + dylib_len;
               dylib_cmd_sz = (dylib_cmd_sz + 7) & ~7;
-              struct dylib_command *dc = (void*)newpos;
-              dc->cmd = LC_LOAD_DYLIB;
-              dc->cmdsize = dylib_cmd_sz;
-              dc->dylib.name.offset = sizeof(struct dylib_command);
-              dc->dylib.timestamp = 2;
-              dc->dylib.current_version = 0;
-              dc->dylib.compatibility_version = 0;
-              memcpy(newpos + sizeof(struct dylib_command), dylib, dylib_len);
-              new_ncmds++;
-              new_sz += dylib_cmd_sz;
+    struct dylib_command *dc = (void*)writepos;
+    dc->cmd = LC_LOAD_DYLIB;
+    dc->cmdsize = dylib_cmd_sz;
+    dc->dylib.name.offset = sizeof(struct dylib_command);
+    dc->dylib.timestamp = 2;
+    dc->dylib.current_version = 0;
+    dc->dylib.compatibility_version = 0;
+    memcpy(writepos + sizeof(struct dylib_command), dylib, dylib_len);
+    new_ncmds++;
+    new_sz += dylib_cmd_sz;
 
               mh->ncmds = new_ncmds;
               mh->sizeofcmds = new_sz;
