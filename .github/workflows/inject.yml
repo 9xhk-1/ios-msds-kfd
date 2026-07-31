@@ -37,8 +37,10 @@ jobs:
 
       - name: Build insert_dylib
         run: |
-          git clone --recurse-submodules --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
-          clang -O2 /tmp/id/insert_dylib/main.c -o /usr/local/bin/insert_dylib -I/tmp/id/insert_dylib -I/tmp/id/shared
+          curl -fsSL "https://raw.githubusercontent.com/Tyilo/insert_dylib/master/insert_dylib/main.c" -o /tmp/main.c
+          curl -fsSL "https://raw.githubusercontent.com/Tyilo/insert_dylib/master/shared/shared.h" -o /tmp/shared.h
+          curl -fsSL "https://raw.githubusercontent.com/Tyilo/insert_dylib/master/insert_dylib/shared.h" -o /tmp/dylib_shared.h 2>/dev/null || true
+          clang -O2 /tmp/main.c -o /usr/local/bin/insert_dylib -I/tmp
 
       - name: Inject into IPA
         run: |
