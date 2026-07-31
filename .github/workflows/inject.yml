@@ -34,9 +34,9 @@ jobs:
       - name: Install tools
         run: |
           brew install ldid
-          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
+          git clone --recurse-submodules --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/id
           cd /tmp/id/insert_dylib
-          clang -O2 main.c -o insert_dylib -I. -framework CoreFoundation 2>/dev/null || clang -O2 main.c -o insert_dylib -I.
+          clang -O2 main.c -o insert_dylib -I.
           sudo cp insert_dylib /usr/local/bin/
 
       - name: Inject into IPA
