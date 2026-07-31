@@ -59,28 +59,8 @@ jobs:
           rm -rf work output
           mkdir -p work output
 
-          python3 -c "
-          import zipfile, os
-          out = os.path.abspath('work')
-          os.makedirs(out, exist_ok=True)
-          zf = zipfile.ZipFile('$IPA', 'r')
-          for info in zf.infolist():
-              fname = info.filename.replace('\\\\', '/')
-              parts = fname.split('/')
-              try:
-                  idx = parts.index('Payload')
-                  rel = '/'.join(parts[idx:])
-              except ValueError:
-                  continue
-              if '..' in rel: continue
-              target = os.path.normpath(os.path.join(out, rel))
-              os.makedirs(os.path.dirname(target), exist_ok=True)
-              if not info.is_dir():
-                  with zf.open(info) as src, open(target, 'wb') as dst:
-                      dst.write(src.read())
-          zf.close()
-          print('Extracted OK')
-          "
+          bsdtar -xf "$IPA" -C work/ 2>/dev/null || unzip -o "$IPA" -d work/
+          test -d work/Payload || { echo "Payload not found, listing work:"; find work -maxdepth 2 -ls; exit 1; }
 
           APP=$(find work/Payload -name '*.app' -maxdepth 1 -type d | head -1)
           APP_NAME=$(basename "$APP" .app)
@@ -95,18 +75,7 @@ jobs:
           rm -rf "$APP/_CodeSignature"
 
           cd work
-          python3 -c "
-          import zipfile, os
-          zf = zipfile.ZipFile('../output/${NAME}-injected.ipa', 'w', zipfile.ZIP_DEFLATED)
-          for root, dirs, files in os.walk('.'):
-              for name in dirs + files:
-                  full = os.path.join(root, name)
-                  arc = full.replace(os.sep, '/')
-                  if arc.startswith('./'): arc = arc[2:]
-                  zf.write(full, arc)
-          zf.close()
-          print('Repacked OK')
-          "
+          zip -r "../output/${NAME}-injected.ipa" Payload/
           cd ..
           ls -lh "output/${NAME}-injected.ipa"
 
