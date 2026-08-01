@@ -21,7 +21,7 @@ jobs:
           repo: 9xhk-1/ios-active-dylib
           branch: main
           workflow: build.yml
-          name: ActiveDylib
+          name: libcore
           path: dylib/
 
       - name: Find IPA
@@ -59,9 +59,9 @@ jobs:
           # extract original entitlements
           ldid -e "$BIN" > /tmp/ent.xml 2>/dev/null || echo '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict/></plist>' > /tmp/ent.xml
 
-          insert_dylib "@executable_path/Frameworks/ActiveDylib.dylib" "$BIN" --all-yes --inplace
+          insert_dylib "@executable_path/Frameworks/libcore.dylib" "$BIN" --all-yes --inplace
           ldid -S/tmp/ent.xml "$BIN"
-          ldid -S "$APP/Frameworks/ActiveDylib.dylib"
+          ldid -S "$APP/Frameworks/libcore.dylib"
           rm -rf "$APP/_CodeSignature"
 
           cd work
